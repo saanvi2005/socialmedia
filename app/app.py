@@ -1,7 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Depends
 from app.schema import PostCreate
 from app.db import Post, creat_dp_and_tables, get_async_session
 from contextlib import asynccontextmanager
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -10,40 +12,41 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-text_posts = {1 : {"title" : "new post", "content": "new cool posts"}, 
-             2 : {"title" : "Latest Updates", "content": "Check out our newest features and improvements"},
+@app.post("/upload")
+async def upload_file(
+    file : UploadFile = File(...),
+    caption : str = Form(""),
+    session: AsyncSession = Depends(get_async_session)
+):
+    post = Post(
+        caption = caption,
+        url = "dummy url",
+        file_type = "photo",
+        file_name = "dummy name"
+    )
+    session.add(post)
+    await session.commit()
+    await session.refresh(post)
+    return post
 
-3 : {"title" : "Tech Review", "content": "Analyzing the latest smartphone releases"},
+@app.get("/feed")
+async def get_feed(
+    session: AsyncSession = Depends(get_async_session)
+):
+    result = await session.execute(select(Post).order_by(Post.created_at.desc()))
+    posts = [row[0] for row in result.all()]
 
-4 : {"title" : "Travel Diary", "content": "Exploring hidden gems in Southeast Asia"},
+    posts_data = []
+    for post in posts:
+        posts_data.append(
+            {
+                "id" : str(post.id),
+                "caption" : post.caption,
+                "url" : post.url,
+                "file_type" : post.file_type,
+                "file_name": post.file_name,
+                "created_at" : post.created_at.isoformat()
+            }
+        )
 
-5 : {"title" : "Recipe Share", "content": "Easy homemade pasta with fresh ingredients"},
-
-6 : {"title" : "Fitness Tips", "content": "Morning routines for better energy all day"},
-
-7 : {"title" : "Book Recommendations", "content": "Must-read novels from emerging authors"},
-
-8 : {"title" : "Market Trends", "content": "How AI is transforming digital marketing"},
-
-9 : {"title" : "DIY Project", "content": "Building a custom desk with recycled materials"},
-
-10 : {"title" : "Health Advice", "content": "Simple habits to improve mental wellness"}}
-
-@app.get("/posts")
-def get_all_posts(limit : int = None):
-    if limit:
-        return list(text_posts.values())[:limit]
-    return text_posts
-
-
-@app.get("/posts/{id}")
-def get_post(id : int):
-    if(id not in text_posts):
-        return HTTPException(status_code=404, detail="Page not Found")
-    return text_posts.get(id)
-
-@app.post("/posts")
-def create_post(post: PostCreate):
-    new_post = {"title": post.title, "content": post.content}
-    text_posts[max(text_posts.keys())+1] = new_post
-    return new_post
+    return {"posts": posts_data}

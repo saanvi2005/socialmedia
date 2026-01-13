@@ -1,7 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from app.schema import PostCreate
+from app.db import Post, creat_dp_and_tables, get_async_session
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await creat_dp_and_tables()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 text_posts = {1 : {"title" : "new post", "content": "new cool posts"}, 
              2 : {"title" : "Latest Updates", "content": "Check out our newest features and improvements"},
